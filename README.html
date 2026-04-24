@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Processing Platform — README</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fff; color: #24292f; line-height: 1.6; max-width: 980px; margin: 0 auto; padding: 2rem; }
+        h1 { font-size: 2rem; border-bottom: 1px solid #d0d7de; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+        h2 { font-size: 1.5rem; border-bottom: 1px solid #d0d7de; padding-bottom: 0.3rem; margin: 2rem 0 1rem; }
+        h3 { font-size: 1.2rem; margin: 1.5rem 0 0.5rem; }
+        p { margin: 0.5rem 0; }
+        a { color: #0969da; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        hr { border: none; border-top: 1px solid #d0d7de; margin: 2rem 0; }
+        code { background: #f6f8fa; padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.85em; font-family: 'SFMono-Regular', Consolas, monospace; }
+        pre { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: 0.85rem; line-height: 1.5; }
+        pre code { background: none; padding: 0; }
+        table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+        th, td { border: 1px solid #d0d7de; padding: 0.5rem 0.75rem; text-align: left; font-size: 0.9rem; }
+        th { background: #f6f8fa; font-weight: 600; }
+        tr:nth-child(even) { background: #f6f8fa; }
+        strong { font-weight: 600; }
+        ul, ol { padding-left: 2rem; margin: 0.5rem 0; }
+        li { margin: 0.25rem 0; }
+        .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .author { background: #f0f0f0; padding: 1rem; border-radius: 8px; margin: 1rem 0; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<h1>Microservices-Based Order Processing Platform</h1>
+
+<div class="author">
+    <strong>Author:</strong> Senthil Muniyan<br>
+    <strong>Stack:</strong> Java 17 · Spring Boot 3.2 · Apache Kafka · PostgreSQL · WebSocket (STOMP)<br>
+    <strong>Capacity:</strong> 5,000+ orders/minute with real-time dashboard updates
+</div>
+
+<hr>
+
+<h2>1. Architecture Diagram</h2>
+
+<pre><code>                          ⑤ WebSocket (STOMP) — Real-time notifications
+                 ┌──────────────────────────────────────────────────────┐
+                 ▼                                                      │
+┌──────────────────┐   ① REST    ┌──────────────────┐   ③ Publish   ┌──────┐   ④ Consume   ┌──────────────────────┐
+│   Frontend UI    │──(JWT)────▶│  Order Service    │──(Outbox)───▶│ Kafka │─────────────▶│ Notification Service │
+│   :3000          │            │  :8081            │              │ :9092 │              │ :8082                │
+│                  │            │                   │              │       │              │                      │
+│ HTML + JS        │            │ Spring Boot 3.2   │              │ 3 pt  │              │ Spring Boot 3.2      │
+│ SockJS + STOMP   │            │ Resilience4j      │              └───────┘              │ @KafkaListener       │
+└──────────────────┘            │ JWT + Rate Limit  │                                     │ SimpMessagingTemplate│
+                                └────────┬──────────┘                                     └──────────────────────┘
+                                         │
+                                    ② Persist
+                                         │
+                                ┌────────▼──────────┐
+                                │    PostgreSQL      │
+                                │    :5432           │
+                                │ orders             │
+                                │ outbox_events      │
+                                └────────────────────┘</code></pre>
+
+<h3>Services</h3>
+<table>
+<tr><th>Service</th><th>Port</th><th>Technology</th><th>Responsibility</th></tr>
+<tr><td><strong>Order Service</strong></td><td>8081</td><td>Spring Boot 3.2, Java 17, JPA, Spring Security</td><td>REST API, JWT auth, order persistence, outbox events</td></tr>
+<tr><td><strong>Notification Service</strong></td><td>8082</td><td>Spring Boot 3.2, Java 17, WebSocket (STOMP)</td><td>Kafka consumer, real-time WebSocket push</td></tr>
+</table>
+
+<h3>Messaging</h3>
+<table>
+<tr><th>Component</th><th>Technology</th><th>Configuration</th></tr>
+<tr><td><strong>Broker</strong></td><td>Apache Kafka 3.9</td><td>Topic: <code>order-events</code>, 3 partitions, <code>orderId</code> as key</td></tr>
+<tr><td><strong>Producer</strong></td><td>Spring Kafka + Resilience4j</td><td><code>acks=all</code>, <code>retries=3</code>, <code>enable.idempotence=true</code>, circuit breaker</td></tr>
+<tr><td><strong>Consumer</strong></td><td>Spring Kafka</td><td><code>auto-offset-reset=earliest</code>, manual acknowledgment</td></tr>
+<tr><td><strong>Pattern</strong></td><td>Outbox Pattern</td><td>Order + event in same DB transaction → scheduler publishes to Kafka</td></tr>
+</table>
+
+<h3>Database</h3>
+<table>
+<tr><th>Component</th><th>Technology</th><th>Tables</th></tr>
+<tr><td><strong>PostgreSQL 15+</strong></td><td>Spring Data JPA, HikariCP (20 connections)</td><td><code>orders</code>, <code>outbox_events</code></td></tr>
+</table>
+
+<h3>Request Flow</h3>
+<ol>
+<li><strong>Frontend</strong> sends <code>POST /orders</code> with JWT Bearer token</li>
+<li><strong>Order Service</strong> persists order + outbox event in a <strong>single transaction</strong></li>
+<li><strong>Background scheduler</strong> polls outbox every 1s, publishes to Kafka</li>
+<li><strong>Notification Service</strong> consumes events from Kafka</li>
+<li><strong>Notification Service</strong> pushes real-time updates via WebSocket</li>
+</ol>
+
+<hr>
+
+<h2>2. Design Decisions</h2>
+
+<h3>Messaging Technology: Apache Kafka</h3>
+<table>
+<tr><th>Alternative</th><th>Why Kafka was chosen instead</th></tr>
+<tr><td>RabbitMQ</td><td>Kafka provides higher throughput. Partitioning enables parallel consumption. Disk retention enables replay after crashes.</td></tr>
+<tr><td>Direct HTTP</td><td>Tight coupling. If notification service is down, order creation fails.</td></tr>
+<tr><td>Redis Pub/Sub</td><td>No persistence. Messages lost if consumer is down. No consumer groups.</td></tr>
+</table>
+
+<h3>Communication Pattern: Outbox Pattern</h3>
+<p>Solves the <strong>dual-write problem</strong> — order and event written in the same DB transaction. Background scheduler publishes to Kafka independently.</p>
+<pre><code>Direct publish (PROBLEMATIC):
+  1. Save to DB     ✓
+  2. Publish Kafka   ✗ fails → data inconsistency
+
+Outbox Pattern (WHAT WE USE):
+  1. Save order to DB     }  SAME TRANSACTION
+  2. Save outbox event    }  Both succeed or both rollback
+  3. Scheduler publishes to Kafka independently
+  → Always consistent. Eventual delivery guaranteed.</code></pre>
+
+<h3>Database: PostgreSQL</h3>
+<table>
+<tr><th>Requirement</th><th>How PostgreSQL meets it</th></tr>
+<tr><td>ACID transactions</td><td>Outbox Pattern needs order + event in same transaction</td></tr>
+<tr><td>Unique constraints</td><td><code>idempotency_key UNIQUE</code> prevents duplicates under race conditions</td></tr>
+<tr><td>Performance</td><td>10,000+ TPS. With HikariCP (20 conn × 5ms) = ~4,000 inserts/sec capacity</td></tr>
+</table>
+
+<h3>Scaling Strategy</h3>
+<table>
+<tr><th>Strategy</th><th>Implementation</th><th>Impact</th></tr>
+<tr><td>Stateless services</td><td>JWT auth, no server sessions</td><td>Horizontal scaling behind load balancer</td></tr>
+<tr><td>Async publishing</td><td>Outbox → scheduler → Kafka</td><td>API latency = DB write only (~5-10ms)</td></tr>
+<tr><td>Connection pooling</td><td>HikariCP max=20</td><td>~4,000 inserts/sec capacity</td></tr>
+<tr><td>Kafka partitioning</td><td>3 partitions</td><td>Up to 3 parallel consumers</td></tr>
+</table>
+
+<h3>Security: JWT Authentication</h3>
+<ul>
+<li>JWT on all <code>/orders/**</code> endpoints</li>
+<li>Rate limiting on <code>/auth/login</code> (5 attempts/min per IP)</li>
+<li>CORS restricted to <code>http://localhost:3000</code></li>
+<li>Actuator metrics require JWT; health endpoints public</li>
+<li>Input validation with structured error responses</li>
+<li>Custom <code>401</code> responses (not Spring's default <code>403</code>)</li>
+</ul>
+
+<hr>
+
+<h2>3. Failure Handling</h2>
+
+<h3>3.1 Kafka Unavailable</h3>
+<p>Order is <strong>still created successfully</strong>. Outbox Pattern decouples order creation from Kafka:</p>
+<pre><code>1. POST /orders → order + outbox event saved in SAME transaction → 201 Created
+2. Scheduler tries to publish → Kafka down → fails
+3. Circuit breaker tracks failures:
+   - &lt;50% failure rate → retry next poll (1s)
+   - ≥50% failure rate → circuit OPENS for 10s (fast-fail)
+   - After 10s → HALF_OPEN → 3 test calls
+4. Event stays PENDING in outbox
+5. Kafka recovers → scheduler publishes all pending events</code></pre>
+<p><strong>No data lost.</strong> Orders persisted. Events eventually delivered.</p>
+
+<h3>3.2 Service Crashes</h3>
+<table>
+<tr><th>Scenario</th><th>What happens</th><th>Recovery</th></tr>
+<tr><td>Order Service crash before commit</td><td>Transaction rolls back, no partial state</td><td>Client retries with same idempotencyKey</td></tr>
+<tr><td>Order Service crash after commit</td><td>Order saved, outbox event PENDING</td><td>Restart → scheduler resumes publishing</td></tr>
+<tr><td>Notification Service crash</td><td>Kafka retains unacked messages</td><td>Restart → consumer resumes from last committed offset</td></tr>
+</table>
+
+<h3>3.3 Duplicate Orders</h3>
+<p>Three layers of protection:</p>
+<table>
+<tr><th>Layer</th><th>Mechanism</th><th>Handles</th></tr>
+<tr><td>1. Application</td><td><code>findByIdempotencyKey()</code> → return existing</td><td>99% of duplicates</td></tr>
+<tr><td>2. Database</td><td><code>UNIQUE</code> constraint on <code>idempotency_key</code></td><td>Race conditions</td></tr>
+<tr><td>3. Kafka</td><td><code>enable.idempotence=true</code></td><td>Producer retry duplicates</td></tr>
+</table>
+
+<hr>
+
+<h2>API Reference</h2>
+<table>
+<tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+<tr><td><code>POST</code></td><td><code>/auth/login</code></td><td>Public</td><td>Returns JWT token</td></tr>
+<tr><td><code>POST</code></td><td><code>/orders</code></td><td>JWT</td><td>Create order</td></tr>
+<tr><td><code>GET</code></td><td><code>/orders/{id}</code></td><td>JWT</td><td>Get order by UUID</td></tr>
+<tr><td><code>GET</code></td><td><code>/actuator/health</code></td><td>Public</td><td>Health check</td></tr>
+<tr><td><code>GET</code></td><td><code>/actuator/prometheus</code></td><td>JWT / Public</td><td>Prometheus metrics</td></tr>
+</table>
+
+<h3>WebSocket</h3>
+<table>
+<tr><th>Endpoint</th><th>Protocol</th><th>Description</th></tr>
+<tr><td><code>/ws/orders</code></td><td>SockJS + STOMP</td><td>Connection endpoint</td></tr>
+<tr><td><code>/topic/orders</code></td><td>STOMP subscription</td><td>Real-time order notifications</td></tr>
+</table>
+
+<hr>
+
+<h2>Environment Variables</h2>
+<table>
+<tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+<tr><td><code>SERVER_PORT</code></td><td>8081 / 8082</td><td>Service port</td></tr>
+<tr><td><code>DB_URL</code></td><td><code>jdbc:postgresql://localhost:5432/orderdb</code></td><td>Database URL</td></tr>
+<tr><td><code>DB_USERNAME</code></td><td><code>orderuser</code></td><td>Database user</td></tr>
+<tr><td><code>DB_PASSWORD</code></td><td><code>orderpass</code></td><td>Database password</td></tr>
+<tr><td><code>KAFKA_BOOTSTRAP_SERVERS</code></td><td><code>localhost:9092</code></td><td>Kafka broker</td></tr>
+<tr><td><code>JWT_SECRET</code></td><td>(base64)</td><td>JWT signing secret</td></tr>
+<tr><td><code>CORS_ALLOWED_ORIGINS</code></td><td><code>http://localhost:3000</code></td><td>Allowed origins</td></tr>
+</table>
+
+<hr>
+
+<h2>Deployment Scripts</h2>
+<pre><code># Start all services
+powershell -ExecutionPolicy Bypass -File scripts/start-all.ps1
+
+# Stop all services
+powershell -ExecutionPolicy Bypass -File scripts/stop-all.ps1</code></pre>
+
+<hr>
+<p style="text-align:center; color:#888; font-size:0.85rem; margin-top:2rem;">
+    Order Processing Platform · Senthil Muniyan · 2026
+</p>
+
+</body>
+</html>

@@ -40,3 +40,4 @@ docs/
 ui-client/
 Order-Processing-Platform.postman_collection.json
 .kiro/
+scripts/.pids
