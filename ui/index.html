@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Processing Platform</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+        header { background: #1a1a2e; color: #fff; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+        header h1 { font-size: 1.4rem; font-weight: 600; }
+        .header-right { margin-left: auto; display: flex; align-items: center; gap: 1rem; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #e74c3c; }
+        .status-dot.connected { background: #2ecc71; }
+        .status-text { font-size: 0.8rem; opacity: 0.7; }
+        .user-info { font-size: 0.8rem; opacity: 0.8; }
+        .btn-logout { background: rgba(255,255,255,0.15); color: #fff; border: none; padding: 0.35rem 0.75rem; border-radius: 4px; font-size: 0.75rem; cursor: pointer; }
+        .btn-logout:hover { background: rgba(255,255,255,0.25); }
+
+        .container { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; display: grid; grid-template-columns: 380px 1fr; gap: 1.5rem; }
+
+        .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
+        .card-header { padding: 1rem 1.25rem; border-bottom: 1px solid #eee; font-weight: 600; font-size: 0.95rem; display: flex; justify-content: space-between; align-items: center; }
+        .card-body { padding: 1.25rem; }
+
+        label { display: block; font-size: 0.8rem; font-weight: 600; color: #555; margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        input { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; transition: border-color 0.2s; }
+        input:focus { outline: none; border-color: #4a6cf7; }
+        .form-group { margin-bottom: 1rem; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+        button { padding: 0.7rem 1.5rem; border: none; border-radius: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #4a6cf7; color: #fff; width: 100%; }
+        .btn-primary:hover { background: #3b5de7; }
+        .btn-primary:disabled { background: #a0b0f0; cursor: not-allowed; }
+        .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+        .btn-outline { background: transparent; border: 1px solid #ddd; color: #555; }
+        .btn-outline:hover { background: #f5f5f5; }
+
+        .response-box { margin-top: 1rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px; font-family: 'Courier New', monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; max-height: 150px; overflow-y: auto; display: none; }
+        .response-box.show { display: block; }
+        .response-box.error { background: #fef2f2; color: #dc2626; }
+        .response-box.success { background: #f0fdf4; color: #166534; }
+
+        .right-col { display: flex; flex-direction: column; gap: 1.5rem; }
+
+        .notifications-list { max-height: 250px; overflow-y: auto; }
+        .notification-item { padding: 0.75rem; border-left: 3px solid #4a6cf7; background: #f8f9ff; margin-bottom: 0.5rem; border-radius: 0 6px 6px 0; font-size: 0.85rem; animation: slideIn 0.3s ease; }
+        .notification-item .time { font-size: 0.7rem; color: #888; margin-top: 0.25rem; }
+        .empty-state { text-align: center; padding: 2rem; color: #aaa; font-size: 0.85rem; }
+
+        .orders-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .orders-table th { text-align: left; padding: 0.6rem 0.75rem; background: #f8f9fa; font-size: 0.75rem; text-transform: uppercase; color: #666; letter-spacing: 0.5px; }
+        .orders-table td { padding: 0.6rem 0.75rem; border-top: 1px solid #eee; }
+        .orders-table tr:hover td { background: #f8f9ff; }
+        .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+        .badge-created { background: #dbeafe; color: #1e40af; }
+        .badge-confirmed { background: #d1fae5; color: #065f46; }
+        .badge-shipped { background: #fef3c7; color: #92400e; }
+
+        .count-badge { background: #4a6cf7; color: #fff; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 10px; }
+
+        /* Login overlay */
+        .login-overlay { position: fixed; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .login-overlay.hidden { display: none; }
+        .login-card { background: #fff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.1); padding: 2.5rem; width: 380px; }
+        .login-card h2 { margin-bottom: 0.5rem; font-size: 1.3rem; }
+        .login-card p { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }
+        .login-error { color: #dc2626; font-size: 0.8rem; margin-top: 0.75rem; display: none; }
+        .login-error.show { display: block; }
+
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+    </style>
+</head>
+<body>
+    <!-- Login overlay -->
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-card">
+            <h2>Sign In</h2>
+            <p>Order Processing Platform</p>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="loginUsername" value="admin" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" value="admin123" required>
+                </div>
+                <button type="submit" class="btn-primary" id="loginBtn">Sign In</button>
+                <div class="login-error" id="loginError"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main app -->
+    <header>
+        <h1>Order Processing Platform</h1>
+        <div class="header-right">
+            <div class="status-dot" id="wsStatus"></div>
+            <span class="status-text" id="wsStatusText">Disconnected</span>
+            <span class="user-info" id="userInfo"></span>
+            <button class="btn-logout" id="logoutBtn" onclick="logout()" style="display:none;">Logout</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="left-col">
+            <div class="card">
+                <div class="card-header">Create Order</div>
+                <div class="card-body">
+                    <form id="orderForm">
+                        <div class="form-group">
+                            <label>Customer ID</label>
+                            <input type="text" id="customerId" value="cust-001" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Product ID</label>
+                            <input type="text" id="productId" value="prod-abc" required>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Quantity</label>
+                                <input type="number" id="quantity" value="2" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Idempotency Key</label>
+                                <input type="text" id="idempotencyKey" placeholder="Optional">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-primary" id="submitBtn">Create Order</button>
+                    </form>
+                    <div class="response-box" id="responseBox"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    Live Notifications
+                    <span class="count-badge" id="notifCount">0</span>
+                </div>
+                <div class="card-body">
+                    <div class="notifications-list" id="notifications">
+                        <div class="empty-state">Waiting for order events via WebSocket...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-col">
+            <div class="card">
+                <div class="card-header">
+                    Orders
+                    <button class="btn-sm btn-outline" onclick="refreshOrders()">Refresh</button>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <table class="orders-table">
+                        <thead>
+                            <tr><th>Order ID</th><th>Status</th><th>Created</th></tr>
+                        </thead>
+                        <tbody id="ordersBody">
+                            <tr><td colspan="3" class="empty-state">No orders yet</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Service Health</div>
+                <div class="card-body" id="healthStatus" style="font-size: 0.85rem;">
+                    Checking...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ORDER_API = 'http://localhost:8081';
+        const WS_URL = 'http://localhost:8082/ws/orders';
+
+        let stompClient = null;
+        let orders = [];
+        let notifCount = 0;
+        let jwtToken = null;
+
+        // --- Auth ---
+        function getAuthHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            if (jwtToken) headers['Authorization'] = 'Bearer ' + jwtToken;
+            return headers;
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const btn = document.getElementById('loginBtn');
+            const errEl = document.getElementById('loginError');
+            btn.disabled = true;
+            btn.textContent = 'Signing in...';
+            errEl.className = 'login-error';
+
+            try {
+                const res = await fetch(ORDER_API + '/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('loginUsername').value,
+                        password: document.getElementById('loginPassword').value
+                    })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.token) {
+                    jwtToken = data.token;
+                    document.getElementById('loginOverlay').classList.add('hidden');
+                    document.getElementById('userInfo').textContent = document.getElementById('loginUsername').value;
+                    document.getElementById('logoutBtn').style.display = 'inline-block';
+                    connectWebSocket();
+                    checkHealth();
+                } else {
+                    errEl.textContent = data.message || 'Login failed';
+                    errEl.className = 'login-error show';
+                }
+            } catch (err) {
+                errEl.textContent = 'Cannot reach Order Service. Is it running?';
+                errEl.className = 'login-error show';
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Sign In';
+        });
+
+        function logout() {
+            jwtToken = null;
+            orders = [];
+            notifCount = 0;
+            if (stompClient) { try { stompClient.disconnect(); } catch(e) {} }
+            document.getElementById('loginOverlay').classList.remove('hidden');
+            document.getElementById('logoutBtn').style.display = 'none';
+            document.getElementById('userInfo').textContent = '';
+            document.getElementById('wsStatus').classList.remove('connected');
+            document.getElementById('wsStatusText').textContent = 'Disconnected';
+            document.getElementById('notifCount').textContent = '0';
+            document.getElementById('notifications').innerHTML = '<div class="empty-state">Waiting for order events via WebSocket...</div>';
+            document.getElementById('ordersBody').innerHTML = '<tr><td colspan="3" class="empty-state">No orders yet</td></tr>';
+        }
+
+        // --- WebSocket ---
+        function connectWebSocket() {
+            const socket = new SockJS(WS_URL);
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null;
+
+            stompClient.connect({}, function () {
+                document.getElementById('wsStatus').classList.add('connected');
+                document.getElementById('wsStatusText').textContent = 'WebSocket Connected';
+
+                stompClient.subscribe('/topic/orders', function (message) {
+                    const data = JSON.parse(message.body);
+                    addNotification(data);
+                });
+            }, function () {
+                document.getElementById('wsStatus').classList.remove('connected');
+                document.getElementById('wsStatusText').textContent = 'Disconnected — retrying...';
+                if (jwtToken) setTimeout(connectWebSocket, 3000);
+            });
+        }
+
+        function addNotification(data) {
+            notifCount++;
+            document.getElementById('notifCount').textContent = notifCount;
+            const list = document.getElementById('notifications');
+            if (list.querySelector('.empty-state')) list.innerHTML = '';
+
+            const item = document.createElement('div');
+            item.className = 'notification-item';
+            item.innerHTML = `<strong>Order ${data.orderId || data.order_id || 'N/A'}</strong> — ${data.status || data.eventType || 'event received'}<div class="time">${new Date().toLocaleTimeString()}</div>`;
+            list.prepend(item);
+        }
+
+        // --- Orders ---
+        document.getElementById('orderForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            const box = document.getElementById('responseBox');
+            btn.disabled = true;
+            btn.textContent = 'Creating...';
+
+            const body = {
+                customerId: document.getElementById('customerId').value,
+                productId: document.getElementById('productId').value,
+                quantity: parseInt(document.getElementById('quantity').value)
+            };
+            const ikey = document.getElementById('idempotencyKey').value.trim();
+            if (ikey) body.idempotencyKey = ikey;
+
+            try {
+                const res = await fetch(ORDER_API + '/orders', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(body)
+                });
+
+                if (res.status === 401 || res.status === 403) {
+                    box.className = 'response-box show error';
+                    box.textContent = 'Session expired. Please login again.';
+                    setTimeout(logout, 1500);
+                    return;
+                }
+
+                const data = await res.json();
+                box.className = 'response-box show ' + (res.ok ? 'success' : 'error');
+                box.textContent = JSON.stringify(data, null, 2);
+
+                if (res.ok) {
+                    orders.unshift(data);
+                    renderOrders();
+                }
+            } catch (err) {
+                box.className = 'response-box show error';
+                box.textContent = 'Error: ' + err.message;
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Create Order';
+        });
+
+        function renderOrders() {
+            const tbody = document.getElementById('ordersBody');
+            if (orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No orders yet</td></tr>';
+                return;
+            }
+            tbody.innerHTML = orders.map(o => `
+                <tr>
+                    <td style="font-family: monospace; font-size: 0.75rem;">${o.orderId}</td>
+                    <td><span class="badge badge-${(o.status || '').toLowerCase()}">${o.status}</span></td>
+                    <td>${new Date(o.createdAt).toLocaleString()}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function refreshOrders() {
+            for (let i = 0; i < orders.length; i++) {
+                try {
+                    const res = await fetch(ORDER_API + '/orders/' + orders[i].orderId, { headers: getAuthHeaders() });
+                    if (res.ok) orders[i] = await res.json();
+                } catch (e) { /* skip */ }
+            }
+            renderOrders();
+        }
+
+        // --- Health ---
+        async function checkHealth() {
+            const el = document.getElementById('healthStatus');
+            let html = '';
+            for (const [name, url] of [['Order Service (8081)', ORDER_API], ['Notification Service (8082)', 'http://localhost:8082']]) {
+                try {
+                    const res = await fetch(url + '/actuator/health');
+                    const data = await res.json();
+                    html += `<div style="margin-bottom:0.5rem;">✅ <strong>${name}</strong> — ${data.status}</div>`;
+                } catch (e) {
+                    html += `<div style="margin-bottom:0.5rem;">❌ <strong>${name}</strong> — Unreachable</div>`;
+                }
+            }
+            el.innerHTML = html;
+        }
+
+        setInterval(function() { if (jwtToken) checkHealth(); }, 30000);
+    </script>
+</body>
+</html>

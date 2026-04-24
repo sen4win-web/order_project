@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture Diagram — Order Processing Platform</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f9fb; padding: 2rem; }
+        h1 { text-align: center; font-size: 1.5rem; color: #1a1a2e; margin-bottom: 0.5rem; }
+        .subtitle { text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 2rem; }
+
+        svg { display: block; margin: 0 auto; }
+
+        /* Tooltip */
+        .tooltip { position: absolute; background: #1a1a2e; color: #fff; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.75rem; max-width: 250px; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 10; line-height: 1.4; }
+        .tooltip.show { opacity: 1; }
+
+        .legend { display: flex; justify-content: center; gap: 2rem; margin-top: 1.5rem; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #666; }
+        .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>Order Processing Platform — Architecture</h1>
+    <p class="subtitle">Microservices · Event-Driven · Real-Time Updates</p>
+
+    <svg width="960" height="520" viewBox="0 0 960 520" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <marker id="arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/>
+            </marker>
+            <marker id="arrow-blue" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#4a6cf7"/>
+            </marker>
+            <marker id="arrow-green" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#10b981"/>
+            </marker>
+            <marker id="arrow-orange" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b"/>
+            </marker>
+            <filter id="shadow" x="-4%" y="-4%" width="108%" height="112%">
+                <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.08"/>
+            </filter>
+        </defs>
+
+        <!-- ==================== CONNECTIONS ==================== -->
+
+        <!-- Frontend -> Order Service (REST) -->
+        <line x1="190" y1="250" x2="330" y2="250" stroke="#4a6cf7" stroke-width="2" marker-end="url(#arrow-blue)" stroke-dasharray="none"/>
+        <text x="260" y="238" text-anchor="middle" font-size="10" fill="#4a6cf7" font-weight="600">REST API</text>
+        <text x="260" y="268" text-anchor="middle" font-size="9" fill="#94a3b8">POST/GET /orders</text>
+
+        <!-- Order Service -> PostgreSQL -->
+        <line x1="440" y1="300" x2="440" y2="390" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+        <text x="455" y="350" font-size="10" fill="#94a3b8">JPA/Hibernate</text>
+
+        <!-- Order Service -> Kafka (outbox publish) -->
+        <line x1="550" y1="250" x2="620" y2="250" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrow-orange)"/>
+        <text x="585" y="238" text-anchor="middle" font-size="10" fill="#f59e0b" font-weight="600">Publish</text>
+        <text x="585" y="268" text-anchor="middle" font-size="9" fill="#94a3b8">Outbox Pattern</text>
+
+        <!-- Kafka -> Notification Service -->
+        <line x1="730" y1="250" x2="790" y2="250" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrow-orange)"/>
+        <text x="760" y="238" text-anchor="middle" font-size="10" fill="#f59e0b" font-weight="600">Consume</text>
+        <text x="760" y="268" text-anchor="middle" font-size="9" fill="#94a3b8">@KafkaListener</text>
+
+        <!-- Notification Service -> Frontend (WebSocket) -->
+        <path d="M 870 200 Q 870 100, 480 100 Q 90 100, 90 200" stroke="#10b981" stroke-width="2" fill="none" marker-end="url(#arrow-green)" stroke-dasharray="6,4"/>
+        <text x="480" y="88" text-anchor="middle" font-size="10" fill="#10b981" font-weight="600">WebSocket (STOMP)</text>
+        <text x="480" y="105" text-anchor="middle" font-size="9" fill="#94a3b8">Real-time order notifications</text>
+
+        <!-- JWT Auth indicator on REST line -->
+        <rect x="230" y="274" width="60" height="16" rx="8" fill="#ef4444" opacity="0.15"/>
+        <text x="260" y="285" text-anchor="middle" font-size="8" fill="#ef4444" font-weight="600">🔒 JWT</text>
+
+        <!-- ==================== FRONTEND ==================== -->
+        <g class="node" data-tip="Single-page HTML app served on port 3000. Creates orders via REST, receives real-time updates via WebSocket.">
+            <rect x="30" y="200" width="160" height="100" rx="12" fill="#ffffff" stroke="#4a6cf7" stroke-width="2" filter="url(#shadow)"/>
+            <text x="110" y="235" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a2e">Frontend UI</text>
+            <text x="110" y="255" text-anchor="middle" font-size="10" fill="#64748b">HTML + JavaScript</text>
+            <text x="110" y="275" text-anchor="middle" font-size="9" fill="#94a3b8">SockJS + STOMP</text>
+            <text x="110" y="292" text-anchor="middle" font-size="9" fill="#4a6cf7">:3000</text>
+        </g>
+
+        <!-- ==================== ORDER SERVICE ==================== -->
+        <g class="node" data-tip="Spring Boot 3.2 + Java 17. Exposes POST/GET /orders. Persists to PostgreSQL. Uses Outbox Pattern for reliable Kafka publishing. Protected by JWT + Rate Limiting.">
+            <rect x="330" y="190" width="220" height="120" rx="12" fill="#ffffff" stroke="#4a6cf7" stroke-width="2" filter="url(#shadow)"/>
+            <rect x="330" y="190" width="220" height="32" rx="12" fill="#4a6cf7"/>
+            <rect x="330" y="210" width="220" height="12" fill="#4a6cf7"/>
+            <text x="440" y="211" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">Order Service</text>
+            <text x="440" y="245" text-anchor="middle" font-size="10" fill="#64748b">Spring Boot 3.2 · Java 17</text>
+            <text x="440" y="263" text-anchor="middle" font-size="9" fill="#94a3b8">Resilience4j · Circuit Breaker</text>
+            <text x="440" y="280" text-anchor="middle" font-size="9" fill="#94a3b8">Idempotency · Outbox Pattern</text>
+            <text x="440" y="300" text-anchor="middle" font-size="9" fill="#4a6cf7">:8081</text>
+        </g>
+
+        <!-- ==================== KAFKA ==================== -->
+        <g class="node" data-tip="Apache Kafka 3.9. Topic: order-events (3 partitions). Decouples Order Service from Notification Service. Guarantees at-least-once delivery.">
+            <rect x="620" y="210" width="110" height="80" rx="12" fill="#ffffff" stroke="#f59e0b" stroke-width="2" filter="url(#shadow)"/>
+            <rect x="620" y="210" width="110" height="28" rx="12" fill="#f59e0b"/>
+            <rect x="620" y="226" width="110" height="12" fill="#f59e0b"/>
+            <text x="675" y="230" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">Kafka</text>
+            <text x="675" y="258" text-anchor="middle" font-size="9" fill="#64748b">order-events</text>
+            <text x="675" y="273" text-anchor="middle" font-size="9" fill="#94a3b8">3 partitions</text>
+            <text x="675" y="285" text-anchor="middle" font-size="9" fill="#f59e0b">:9092</text>
+        </g>
+
+        <!-- ==================== NOTIFICATION SERVICE ==================== -->
+        <g class="node" data-tip="Spring Boot 3.2 + Java 17. Consumes Kafka events and pushes real-time notifications to WebSocket subscribers on /topic/orders.">
+            <rect x="790" y="190" width="150" height="120" rx="12" fill="#ffffff" stroke="#10b981" stroke-width="2" filter="url(#shadow)"/>
+            <rect x="790" y="190" width="150" height="32" rx="12" fill="#10b981"/>
+            <rect x="790" y="210" width="150" height="12" fill="#10b981"/>
+            <text x="865" y="211" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">Notification Service</text>
+            <text x="865" y="245" text-anchor="middle" font-size="10" fill="#64748b">Spring Boot 3.2</text>
+            <text x="865" y="263" text-anchor="middle" font-size="9" fill="#94a3b8">WebSocket (STOMP)</text>
+            <text x="865" y="280" text-anchor="middle" font-size="9" fill="#94a3b8">Kafka Consumer</text>
+            <text x="865" y="300" text-anchor="middle" font-size="9" fill="#10b981">:8082</text>
+        </g>
+
+        <!-- ==================== POSTGRESQL ==================== -->
+        <g class="node" data-tip="PostgreSQL 15. Stores orders table and outbox_events table. HikariCP connection pool (20 max). Outbox ensures transactional consistency with Kafka.">
+            <ellipse cx="440" cy="430" rx="90" ry="35" fill="#ffffff" stroke="#6366f1" stroke-width="2" filter="url(#shadow)"/>
+            <text x="440" y="425" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1a2e">PostgreSQL</text>
+            <text x="440" y="443" text-anchor="middle" font-size="9" fill="#94a3b8">orders · outbox_events</text>
+            <text x="440" y="458" text-anchor="middle" font-size="9" fill="#6366f1">:5432</text>
+        </g>
+
+        <!-- ==================== OBSERVABILITY BOX ==================== -->
+        <g class="node" data-tip="Both services expose /actuator/health, /actuator/prometheus, /actuator/metrics. Structured JSON logging with correlation IDs. Prometheus metrics via Micrometer.">
+            <rect x="330" y="470" width="220" height="40" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,3"/>
+            <text x="440" y="494" text-anchor="middle" font-size="10" fill="#64748b">📊 Prometheus + Micrometer · Structured JSON Logs</text>
+        </g>
+
+        <!-- ==================== SECURITY BOX ==================== -->
+        <g class="node" data-tip="JWT authentication on all /orders endpoints. Rate limiting on /auth/login (5 req/min per IP). CORS restricted to localhost:3000. Actuator metrics require auth.">
+            <rect x="30" y="340" width="160" height="50" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
+            <text x="110" y="362" text-anchor="middle" font-size="10" font-weight="600" fill="#dc2626">🔒 Security</text>
+            <text x="110" y="378" text-anchor="middle" font-size="8" fill="#94a3b8">JWT · Rate Limit · CORS</text>
+        </g>
+
+        <!-- ==================== FLOW NUMBERS ==================== -->
+        <circle cx="250" cy="250" r="10" fill="#4a6cf7"/>
+        <text x="250" y="254" text-anchor="middle" font-size="9" fill="#fff" font-weight="700">1</text>
+
+        <circle cx="440" cy="375" r="10" fill="#6366f1"/>
+        <text x="440" y="379" text-anchor="middle" font-size="9" fill="#fff" font-weight="700">2</text>
+
+        <circle cx="585" cy="250" r="10" fill="#f59e0b"/>
+        <text x="585" y="254" text-anchor="middle" font-size="9" fill="#fff" font-weight="700">3</text>
+
+        <circle cx="760" cy="250" r="10" fill="#f59e0b"/>
+        <text x="760" y="254" text-anchor="middle" font-size="9" fill="#fff" font-weight="700">4</text>
+
+        <circle cx="480" cy="100" r="10" fill="#10b981"/>
+        <text x="480" y="104" text-anchor="middle" font-size="9" fill="#fff" font-weight="700">5</text>
+    </svg>
+
+    <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#4a6cf7"></div> REST API (JWT Protected)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div> Kafka Messaging</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div> WebSocket (Real-time)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div> Database</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#dc2626"></div> Security Layer</div>
+    </div>
+
+    <div style="max-width: 700px; margin: 2rem auto; font-size: 0.85rem; color: #555; line-height: 1.8;">
+        <strong>Flow:</strong>
+        <ol style="padding-left: 1.5rem;">
+            <li><strong style="color:#4a6cf7">①</strong> Frontend sends <code>POST /orders</code> with JWT Bearer token to Order Service</li>
+            <li><strong style="color:#6366f1">②</strong> Order Service persists order + outbox event in a single DB transaction</li>
+            <li><strong style="color:#f59e0b">③</strong> Background scheduler polls outbox and publishes events to Kafka</li>
+            <li><strong style="color:#f59e0b">④</strong> Notification Service consumes events from Kafka</li>
+            <li><strong style="color:#10b981">⑤</strong> Notification Service pushes real-time update to Frontend via WebSocket</li>
+        </ol>
+    </div>
+
+    <!-- Tooltip logic -->
+    <div class="tooltip" id="tooltip"></div>
+    <script>
+        const tooltip = document.getElementById('tooltip');
+        document.querySelectorAll('.node').forEach(node => {
+            node.style.cursor = 'pointer';
+            node.addEventListener('mouseenter', e => {
+                const tip = node.getAttribute('data-tip');
+                if (!tip) return;
+                tooltip.textContent = tip;
+                tooltip.classList.add('show');
+            });
+            node.addEventListener('mousemove', e => {
+                tooltip.style.left = (e.pageX + 12) + 'px';
+                tooltip.style.top = (e.pageY - 40) + 'px';
+            });
+            node.addEventListener('mouseleave', () => {
+                tooltip.classList.remove('show');
+            });
+        });
+    </script>
+</body>
+</html>
