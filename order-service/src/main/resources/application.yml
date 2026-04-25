@@ -45,6 +45,7 @@ spring:
 outbox:
   polling:
     interval: ${OUTBOX_POLL_INTERVAL:1000}
+  batch-size: ${OUTBOX_BATCH_SIZE:50}
 
 # Actuator
 management:
@@ -84,6 +85,9 @@ app:
   auth:
     demo-username: ${AUTH_USERNAME:admin}
     demo-password: ${AUTH_PASSWORD:admin123}
+  kafka:
+    topic: ${KAFKA_TOPIC:order-events}
+    partitions: ${KAFKA_PARTITIONS:3}
 
 # JWT
 jwt:

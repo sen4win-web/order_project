@@ -38,41 +38,36 @@ public class OrderService {
 
     /**
      * Creates an order and inserts an outbox event in the same transaction.
-     * This is the Outbox Pattern — guaranteeing that the event will eventually
-     * be published to Kafka even if the broker is temporarily unavailable.
+     * Outbox Pattern guarantees the event will eventually be published to Kafka.
      */
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
         String correlationId = UUID.randomUUID().toString();
         MDC.put("correlationId", correlationId);
 
-        // Idempotency check
-        if (request.idempotencyKey() != null && !request.idempotencyKey().isBlank()) {
-            Optional<Order> existing = orderRepository.findByIdempotencyKey(request.idempotencyKey());
-            if (existing.isPresent()) {
-                Order existingOrder = existing.get();
-                log.info("Duplicate order detected for idempotencyKey={}", request.idempotencyKey());
-                return new OrderResponse(
-                        existingOrder.getId().toString(),
-                        existingOrder.getStatus().name(),
-                        existingOrder.getCreatedAt()
-                );
-            }
-        }
-
-        // Create order
-        Order order = new Order();
-        order.setCustomerId(request.customerId());
-        order.setProductId(request.productId());
-        order.setQuantity(request.quantity());
-        order.setStatus(OrderStatus.CREATED);
-        order.setIdempotencyKey(request.idempotencyKey());
-
-        Order savedOrder = orderRepository.save(order);
-        log.info("Order created orderId={} customerId={}", savedOrder.getId(), savedOrder.getCustomerId());
-
-        // Create outbox event in the same transaction
         try {
+            // Idempotency check
+            if (request.idempotencyKey() != null && !request.idempotencyKey().isBlank()) {
+                Optional<Order> existing = orderRepository.findByIdempotencyKey(request.idempotencyKey());
+                if (existing.isPresent()) {
+                    Order existingOrder = existing.get();
+                    log.info("Duplicate order detected for idempotencyKey={}", request.idempotencyKey());
+                    return toResponse(existingOrder);
+                }
+            }
+
+            // Create order
+            Order order = new Order();
+            order.setCustomerId(request.customerId());
+            order.setProductId(request.productId());
+            order.setQuantity(request.quantity());
+            order.setStatus(OrderStatus.CREATED);
+            order.setIdempotencyKey(request.idempotencyKey());
+
+            Order savedOrder = orderRepository.save(order);
+            log.info("Order created orderId={} customerId={}", savedOrder.getId(), savedOrder.getCustomerId());
+
+            // Create outbox event in the same transaction
             OrderEventPayload eventPayload = new OrderEventPayload(
                     savedOrder.getId().toString(),
                     savedOrder.getCustomerId(),
@@ -89,24 +84,24 @@ public class OrderService {
             outboxEventRepository.save(outboxEvent);
             log.info("Outbox event created for orderId={}", savedOrder.getId());
 
+            return toResponse(savedOrder);
+
         } catch (JsonProcessingException e) {
-            log.error("Failed to serialize order event payload for orderId={}", savedOrder.getId(), e);
+            log.error("Failed to serialize order event payload", e);
             throw new RuntimeException("Failed to create outbox event", e);
+        } finally {
+            MDC.remove("correlationId");
         }
-
-        MDC.remove("correlationId");
-
-        return new OrderResponse(
-                savedOrder.getId().toString(),
-                savedOrder.getStatus().name(),
-                savedOrder.getCreatedAt()
-        );
     }
 
+    @Transactional(readOnly = true)
     public OrderResponse getOrder(UUID orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
+        return toResponse(order);
+    }
 
+    private OrderResponse toResponse(Order order) {
         return new OrderResponse(
                 order.getId().toString(),
                 order.getStatus().name(),

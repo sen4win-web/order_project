@@ -7,6 +7,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
 @Configuration
 @EnableWebSecurity
@@ -27,13 +28,18 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
+                .headers(headers -> headers
+                        .contentTypeOptions(contentType -> {})          // X-Content-Type-Options: nosniff
+                        .frameOptions(frame -> frame.deny())            // X-Frame-Options: DENY
+                        .xssProtection(xss -> xss.disable())            // Deprecated header, rely on CSP instead
+                        .referrerPolicy(referrer -> referrer
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        .cacheControl(cache -> {})                      // Cache-Control: no-cache, no-store
+                )
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                        // Actuator metrics require authentication
                         .requestMatchers("/actuator/**").authenticated()
-                        // All other endpoints require authentication
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

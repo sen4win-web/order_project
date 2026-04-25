@@ -1,14 +1,16 @@
 package com.orderplatform.order.security;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
 /**
- * Simple in-memory rate limiter using a sliding window.
- * Tracks request timestamps per key (e.g., IP address) and rejects
- * requests that exceed the configured limit within the time window.
+ * In-memory sliding window rate limiter.
+ * Tracks request timestamps per key (IP address) and rejects
+ * requests exceeding the limit within the time window.
+ * Includes periodic cleanup to prevent memory leaks from stale entries.
  */
 @Component
 public class RateLimiter {
@@ -38,5 +40,21 @@ public class RateLimiter {
 
         timestamps.addLast(now);
         return true;
+    }
+
+    /**
+     * Periodic cleanup of stale entries to prevent memory leaks.
+     * Runs every 5 minutes. Removes keys with no recent activity.
+     */
+    @Scheduled(fixedRate = 300_000)
+    public void cleanup() {
+        long windowStart = System.currentTimeMillis() - WINDOW_MS;
+        attempts.entrySet().removeIf(entry -> {
+            ConcurrentLinkedDeque<Long> timestamps = entry.getValue();
+            while (!timestamps.isEmpty() && timestamps.peekFirst() < windowStart) {
+                timestamps.pollFirst();
+            }
+            return timestamps.isEmpty();
+        });
     }
 }

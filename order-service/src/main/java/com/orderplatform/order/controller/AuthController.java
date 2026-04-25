@@ -3,6 +3,8 @@ package com.orderplatform.order.controller;
 import com.orderplatform.order.security.JwtUtil;
 import com.orderplatform.order.security.RateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.security.MessageDigest;
 import java.util.Map;
 
 @RestController
@@ -37,7 +40,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         String clientIp = getClientIp(httpRequest);
 
         if (!rateLimiter.isAllowed(clientIp)) {
@@ -48,7 +51,13 @@ public class AuthController {
             ));
         }
 
-        if (demoUsername.equals(request.username()) && demoPassword.equals(request.password())) {
+        // Constant-time comparison to prevent timing attacks
+        boolean usernameMatch = MessageDigest.isEqual(
+                demoUsername.getBytes(), request.username().getBytes());
+        boolean passwordMatch = MessageDigest.isEqual(
+                demoPassword.getBytes(), request.password().getBytes());
+
+        if (usernameMatch && passwordMatch) {
             String token = jwtUtil.generateToken(request.username());
             log.info("Login successful for user={}", request.username());
             return ResponseEntity.ok(Map.of(
@@ -73,5 +82,8 @@ public class AuthController {
         return request.getRemoteAddr();
     }
 
-    public record LoginRequest(String username, String password) {}
+    public record LoginRequest(
+            @NotBlank(message = "username is required") String username,
+            @NotBlank(message = "password is required") String password
+    ) {}
 }
