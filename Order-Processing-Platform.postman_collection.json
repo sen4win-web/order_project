@@ -1,0 +1,998 @@
+{
+	"info": {
+		"_postman_id": "order-processing-platform",
+		"name": "Order Processing Platform",
+		"description": "API collection for the Microservices-Based Order Processing Platform.\n\n- Order Service runs on port 8081\n- Notification Service runs on port 8082\n\nFlow: Client → Order Service → Kafka → Notification Service → WebSocket",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "order_service_url",
+			"value": "http://localhost:8081",
+			"type": "string"
+		},
+		{
+			"key": "notification_service_url",
+			"value": "http://localhost:8082",
+			"type": "string"
+		},
+		{
+			"key": "order_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "jwt_token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"description": "JWT authentication endpoints. Run 'Login' first to get a token.",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has token', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.token).to.be.a('string');",
+									"    pm.collectionVariables.set('jwt_token', jsonData.token);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"admin\",\n    \"password\": \"admin123\"\n}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/auth/login",
+							"host": ["{{order_service_url}}"],
+							"path": ["auth", "login"]
+						},
+						"description": "Authenticates and returns a JWT token. The token is auto-saved to the jwt_token collection variable."
+					},
+					"response": []
+				},
+				{
+					"name": "Login (Invalid Credentials)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 401', function () {",
+									"    pm.response.to.have.status(401);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"admin\",\n    \"password\": \"wrongpassword\"\n}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/auth/login",
+							"host": ["{{order_service_url}}"],
+							"path": ["auth", "login"]
+						},
+						"description": "Attempts login with wrong credentials. Should return 401."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Order Service",
+			"description": "Endpoints for creating and retrieving orders.",
+			"item": [
+				{
+					"name": "Create Order",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Response has orderId', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.orderId).to.be.a('string');",
+									"    pm.collectionVariables.set('order_id', jsonData.orderId);",
+									"});",
+									"",
+									"pm.test('Response has status', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.be.a('string');",
+									"});",
+									"",
+									"pm.test('Response has createdAt', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.createdAt).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"customerId\": \"cust-001\",\n    \"productId\": \"prod-abc\",\n    \"quantity\": 2,\n    \"idempotencyKey\": \"req-12345\"\n}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/orders",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders"]
+						},
+						"description": "Creates a new order. The order is persisted to PostgreSQL and an event is published to Kafka via the outbox pattern.\n\nThe idempotencyKey is optional — if provided, duplicate requests with the same key return the existing order."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Order (Idempotent Retry)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"customerId\": \"cust-001\",\n    \"productId\": \"prod-abc\",\n    \"quantity\": 2,\n    \"idempotencyKey\": \"req-12345\"\n}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/orders",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders"]
+						},
+						"description": "Sends the same idempotencyKey as 'Create Order'. Should return the existing order instead of creating a duplicate."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Order (No Idempotency Key)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"customerId\": \"cust-002\",\n    \"productId\": \"prod-xyz\",\n    \"quantity\": 5\n}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/orders",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders"]
+						},
+						"description": "Creates an order without an idempotency key."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Order by ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has orderId', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.orderId).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{order_service_url}}/orders/{{order_id}}",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders", "{{order_id}}"]
+						},
+						"description": "Retrieves an order by its UUID. Run 'Create Order' first to populate the order_id variable."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Order (Not Found)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 404', function () {",
+									"    pm.response.to.have.status(404);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{order_service_url}}/orders/00000000-0000-0000-0000-000000000000",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders", "00000000-0000-0000-0000-000000000000"]
+						},
+						"description": "Attempts to retrieve a non-existent order. Should return 404."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Health Checks",
+			"description": "Quick health checks for both services (public endpoints, no auth required).",
+			"item": [
+				{
+					"name": "Order Service - Health",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Status is UP', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.eql('UP');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{order_service_url}}/actuator/health",
+							"host": ["{{order_service_url}}"],
+							"path": ["actuator", "health"]
+						},
+						"description": "Health check for the Order Service (public, no JWT required)."
+					},
+					"response": []
+				},
+				{
+					"name": "Notification Service - Health",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Status is UP', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.eql('UP');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{notification_service_url}}/actuator/health",
+							"host": ["{{notification_service_url}}"],
+							"path": ["actuator", "health"]
+						},
+						"description": "Health check for the Notification Service (public, no JWT required)."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Metrics & Monitoring",
+			"description": "Prometheus metrics and service info endpoints. Order Service metrics require JWT auth. Notification Service metrics are public.",
+			"item": [
+				{
+					"name": "Order Service - Prometheus (Auth Required)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{order_service_url}}/actuator/prometheus",
+							"host": ["{{order_service_url}}"],
+							"path": ["actuator", "prometheus"]
+						},
+						"description": "Prometheus-format metrics for the Order Service. Requires JWT.\n\nIncludes: JVM, Kafka producer, Resilience4j circuit breaker, HikariCP connection pool, HTTP request metrics."
+					},
+					"response": []
+				},
+				{
+					"name": "Notification Service - Prometheus",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{notification_service_url}}/actuator/prometheus",
+							"host": ["{{notification_service_url}}"],
+							"path": ["actuator", "prometheus"]
+						},
+						"description": "Prometheus-format metrics for the Notification Service.\n\nIncludes: JVM, Kafka consumer, WebSocket sessions, HTTP request metrics."
+					},
+					"response": []
+				},
+				{
+					"name": "Order Service - Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{order_service_url}}/actuator/info",
+							"host": ["{{order_service_url}}"],
+							"path": ["actuator", "info"]
+						},
+						"description": "Application info for the Order Service (public endpoint)."
+					},
+					"response": []
+				},
+				{
+					"name": "Order Service - Metrics List (Auth Required)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{order_service_url}}/actuator/metrics",
+							"host": ["{{order_service_url}}"],
+							"path": ["actuator", "metrics"]
+						},
+						"description": "List all available metric names for the Order Service. Requires JWT."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Kafka & Messaging",
+			"description": "Verify Kafka event flow. After creating an order, the outbox publisher sends events to Kafka, and the notification service consumes them.\n\nNote: These use Kafka metrics exposed via actuator to verify messaging is working.",
+			"item": [
+				{
+					"name": "Kafka Producer Metrics (Order Service)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Contains kafka producer metrics', function () {",
+									"    pm.expect(pm.response.text()).to.include('kafka_producer');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{order_service_url}}/actuator/prometheus",
+							"host": ["{{order_service_url}}"],
+							"path": ["actuator", "prometheus"]
+						},
+						"description": "Fetches Prometheus metrics from Order Service. Look for kafka_producer_* metrics to verify Kafka publishing is active.\n\nKey metrics:\n- kafka_producer_record_send_total: total records sent\n- kafka_producer_record_error_total: send failures\n- kafka_producer_topic_record_send_total: records per topic"
+					},
+					"response": []
+				},
+				{
+					"name": "Kafka Consumer Metrics (Notification Service)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Contains kafka consumer metrics', function () {",
+									"    pm.expect(pm.response.text()).to.include('kafka_consumer');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{notification_service_url}}/actuator/prometheus",
+							"host": ["{{notification_service_url}}"],
+							"path": ["actuator", "prometheus"]
+						},
+						"description": "Fetches Prometheus metrics from Notification Service. Look for kafka_consumer_* metrics to verify Kafka consumption is active.\n\nKey metrics:\n- kafka_consumer_records_consumed_total: total records consumed\n- kafka_consumer_fetch_manager_records_lag: consumer lag per partition"
+					},
+					"response": []
+				},
+				{
+					"name": "Circuit Breaker Status",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Contains circuit breaker metrics', function () {",
+									"    pm.expect(pm.response.text()).to.include('resilience4j');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{order_service_url}}/actuator/prometheus",
+							"host": ["{{order_service_url}}"],
+							"path": ["actuator", "prometheus"]
+						},
+						"description": "Check Resilience4j circuit breaker state for the Kafka producer.\n\nKey metrics:\n- resilience4j_circuitbreaker_state: 0=CLOSED (healthy), 1=OPEN, 2=HALF_OPEN\n- resilience4j_circuitbreaker_calls_seconds_count: total calls\n- resilience4j_circuitbreaker_failure_rate: current failure rate"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Notification Service",
+			"description": "Notification service endpoints and WebSocket verification.\n\nThe notification service consumes Kafka events and pushes them to WebSocket subscribers at /topic/orders.\n\nTo test WebSocket in Postman: use the WebSocket tab and connect to ws://localhost:8082/ws/orders",
+			"item": [
+				{
+					"name": "Notification Service - Health",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Status is UP', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.eql('UP');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{notification_service_url}}/actuator/health",
+							"host": ["{{notification_service_url}}"],
+							"path": ["actuator", "health"]
+						},
+						"description": "Health check for the Notification Service. Verifies the service is running and Kafka consumer is connected."
+					},
+					"response": []
+				},
+				{
+					"name": "Notification Service - Prometheus Metrics",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{notification_service_url}}/actuator/prometheus",
+							"host": ["{{notification_service_url}}"],
+							"path": ["actuator", "prometheus"]
+						},
+						"description": "Full Prometheus metrics for the Notification Service including Kafka consumer stats and WebSocket session counts."
+					},
+					"response": []
+				},
+				{
+					"name": "WebSocket Info (SockJS)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('SockJS endpoint is available', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('websocket');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{notification_service_url}}/ws/orders/info",
+							"host": ["{{notification_service_url}}"],
+							"path": ["ws", "orders", "info"]
+						},
+						"description": "SockJS info endpoint. Verifies the WebSocket endpoint is available and returns transport options.\n\nResponse includes:\n- websocket: true/false (whether native WebSocket is supported)\n- cookie_needed: whether cookies are required\n- origins: allowed origins\n- entropy: random value for connection uniqueness"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "End-to-End Flow Test",
+			"description": "Run these requests in order to verify the complete flow:\n1. Login → get JWT\n2. Create Order → persisted to DB, outbox event created\n3. Wait 1-2 seconds for outbox publisher to send to Kafka\n4. Verify Kafka metrics show the message was sent\n5. Verify notification service consumed the event\n\nFor WebSocket verification, open the UI at http://localhost:3000 and watch the Live Notifications panel.",
+			"item": [
+				{
+					"name": "1. Login (Get Token)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.collectionVariables.set('jwt_token', jsonData.token);",
+									"pm.test('Token received', function () {",
+									"    pm.expect(jsonData.token).to.be.a('string');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"admin\",\n    \"password\": \"admin123\"\n}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/auth/login",
+							"host": ["{{order_service_url}}"],
+							"path": ["auth", "login"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Create Order",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Order created (201)', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"var jsonData = pm.response.json();",
+									"pm.collectionVariables.set('order_id', jsonData.orderId);",
+									"pm.test('Has orderId', function () {",
+									"    pm.expect(jsonData.orderId).to.be.a('string');",
+									"});",
+									"pm.test('Status is CREATED', function () {",
+									"    pm.expect(jsonData.status).to.eql('CREATED');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"customerId\": \"cust-e2e\",\n    \"productId\": \"prod-e2e\",\n    \"quantity\": 1\n}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/orders",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders"]
+						},
+						"description": "Creates an order. This triggers: DB persist → outbox event → Kafka publish → notification service consume → WebSocket push."
+					},
+					"response": []
+				},
+				{
+					"name": "3. Verify Order Persisted",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Order found (200)', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test('Order ID matches', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.orderId).to.eql(pm.collectionVariables.get('order_id'));",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{order_service_url}}/orders/{{order_id}}",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders", "{{order_id}}"]
+						},
+						"description": "Verifies the order was persisted to PostgreSQL."
+					},
+					"response": []
+				},
+				{
+					"name": "4. Verify Kafka Producer Sent Event",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Prometheus metrics available', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test('Kafka producer has sent records', function () {",
+									"    pm.expect(pm.response.text()).to.include('kafka_producer');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{order_service_url}}/actuator/prometheus",
+							"host": ["{{order_service_url}}"],
+							"path": ["actuator", "prometheus"]
+						},
+						"description": "Check Kafka producer metrics to verify the outbox event was published to the order-events topic."
+					},
+					"response": []
+				},
+				{
+					"name": "5. Verify Notification Service Consumed Event",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Prometheus metrics available', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test('Kafka consumer has consumed records', function () {",
+									"    pm.expect(pm.response.text()).to.include('kafka_consumer');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{notification_service_url}}/actuator/prometheus",
+							"host": ["{{notification_service_url}}"],
+							"path": ["actuator", "prometheus"]
+						},
+						"description": "Check Kafka consumer metrics on the Notification Service to verify the event was consumed from the order-events topic."
+					},
+					"response": []
+				},
+				{
+					"name": "6. Verify WebSocket Endpoint Available",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('SockJS info available', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"pm.test('WebSocket supported', function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.websocket).to.be.true;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{notification_service_url}}/ws/orders/info",
+							"host": ["{{notification_service_url}}"],
+							"path": ["ws", "orders", "info"]
+						},
+						"description": "Verifies the WebSocket endpoint is available for real-time notifications.\n\nTo see the actual WebSocket messages, open http://localhost:3000 in a browser."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Validation & Error Cases",
+			"description": "Requests that test validation and error handling.",
+			"item": [
+				{
+					"name": "Create Order - Missing customerId",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 400', function () {",
+									"    pm.response.to.have.status(400);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"productId\": \"prod-abc\",\n    \"quantity\": 2\n}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/orders",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders"]
+						},
+						"description": "Should fail validation — customerId is required."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Order - Invalid quantity (0)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 400', function () {",
+									"    pm.response.to.have.status(400);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"customerId\": \"cust-001\",\n    \"productId\": \"prod-abc\",\n    \"quantity\": 0\n}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/orders",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders"]
+						},
+						"description": "Should fail validation — quantity must be at least 1."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Order - Empty body",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 400', function () {",
+									"    pm.response.to.have.status(400);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{jwt_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{order_service_url}}/orders",
+							"host": ["{{order_service_url}}"],
+							"path": ["orders"]
+						},
+						"description": "Should fail validation — missing all required fields."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
